@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบจัดการสารเคมี (Local)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .animate-fade-in-down {
+            animation: fade-in-down 0.5s ease-out forwards;
+        }
+        @keyframes fade-in-down {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        /* Custom modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgb(0,0,0);
+            background-color: rgba(0,0,0,0.4);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            padding: 24px;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-8">
+
+    <div id="app" class="min-h-screen">
+        <!-- Message Box -->
+        <div id="message-box" class="fixed top-4 right-4 p-4 rounded-xl shadow-lg text-white transition-opacity duration-500 z-50 hidden"></div>
+        
+        <header class="bg-white p-6 rounded-2xl shadow-lg mb-8">
+            <h1 class="text-4xl font-extrabold text-gray-900 text-center mb-2">ระบบจัดการสารเคมี</h1>
+            <p class="text-gray-600 text-center">จัดการรายการสารเคมี, การเคลื่อนไหว และสต็อก</p>
+            <div class="mt-4 flex flex-wrap justify-center gap-4">
+                <button id="list-btn" class="px-6 py-3 rounded-xl font-semibold transition-transform transform hover:scale-105 shadow-md">
+                    รายการสารเคมี
+                </button>
+                <button id="add-btn" class="px-6 py-3 rounded-xl font-semibold transition-transform transform hover:scale-105 shadow-md">
+                    เพิ่มสารเคมีใหม่
+                </button>
+                <button id="movements-btn" class="px-6 py-3 rounded-xl font-semibold transition-transform transform hover:scale-105 shadow-md">
+                    ประวัติการเคลื่อนไหว
+                </button>
+                <button id="history-btn" class="px-6 py-3 rounded-xl font-semibold transition-transform transform hover:scale-105 shadow-md">
+                    ประวัติการเปลี่ยนแปลง
+                </button>
+            </div>
+        </header>
+
+        <main id="main-content" class="container mx-auto">
+            <!-- Loading message or content will be rendered here -->
+            <div id="loading-message" class="text-center text-gray-500 mt-20">
+                <p>กำลังโหลดข้อมูล...</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="modal">
+        <div class="modal-content">
+            <h3 class="text-2xl font-bold mb-4">ยืนยันการลบ</h3>
+            <p id="confirm-modal-message" class="mb-6">คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้?</p>
+            <div class="flex justify-center gap-4">
+                <button id="confirm-yes-btn" class="bg-red-500 text-white py-2 px-6 rounded-xl font-semibold hover:bg-red-600 transition-colors">ลบ</button>
+                <button id="confirm-no-btn" class="bg-gray-300 text-gray-800 py-2 px-6 rounded-xl font-semibold hover:bg-gray-400 transition-colors">ยกเลิก</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Script -->
+    <script type="text/javascript">
+        let chemicals = [];
+        let movements = [];
+        let history = [];
+        let currentView = 'list';
+        let selectedChemical = null;
+
+        // --- Local Storage Functions ---
+        const saveData = () => {
+            try {
+                localStorage.setItem('chemicals', JSON.stringify(chemicals));
+                localStorage.setItem('movements', JSON.stringify(movements));
+                localStorage.setItem('history', JSON.stringify(history));
+            } catch (e) {
+                console.error("Error saving to local storage:", e);
+                showMessage('เกิดข้อผิดพลาดในการบันทึกข้อมูล', 'error');
+            }
+        };
+
+        const loadData = () => {
+            try {
+                const storedChemicals = localStorage.getItem('chemicals');
+                const storedMovements = localStorage.getItem('movements');
+                const storedHistory = localStorage.getItem('history');
+                
+                chemicals = storedChemicals ? JSON.parse(storedChemicals) : [];
+                movements = storedMovements ? JSON.parse(storedMovements) : [];
+                history = storedHistory ? JSON.parse(storedHistory) : [];
+            } catch (e) {
+                console.error("Error loading from local storage:", e);
+                showMessage('เกิดข้อผิดพลาดในการโหลดข้อมูล', 'error');
+            }
+        };
+
+        // --- Utility Functions ---
+        const showMessage = (text, type) => {
+            const msgBox = document.getElementById('message-box');
+            msgBox.textContent = text;
+            msgBox.className = `fixed top-4 right-4 p-4 rounded-xl shadow-lg text-white z-50 animate-fade-in-down ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`;
+            msgBox.style.display = 'block';
+            setTimeout(() => {
+                msgBox.style.display = 'none';
+            }, 3000);
+        };
+
+        const showConfirmModal = (message, onConfirm) => {
+            const modal = document.getElementById('confirm-modal');
+            document.getElementById('confirm-modal-message').textContent = message;
+            modal.style.display = 'flex';
+
+            const yesBtn = document.getElementById('confirm-yes-btn');
+            const noBtn = document.getElementById('confirm-no-btn');
+
+            const handleYes = () => {
+                onConfirm();
+                modal.style.display = 'none';
+                yesBtn.removeEventListener('click', handleYes);
+                noBtn.removeEventListener('click', handleNo);
+            };
+
+            const handleNo = () => {
+                modal.style.display = 'none';
+                yesBtn.removeEventListener('click', handleYes);
+                noBtn.removeEventListener('click', handleNo);
+            };
+
+            yesBtn.addEventListener('click', handleYes);
+            noBtn.addEventListener('click', handleNo);
+        };
+
+        const logHistory = (chemicalData, actionType) => {
+            const newHistoryItem = {
+                action: actionType,
+                chemical: { ...chemicalData },
+                timestamp: new Date().toISOString()
+            };
+            history.push(newHistoryItem);
+            saveData();
+        };
+
+        // --- CRUD Operations ---
+        const generateId = () => {
+            return Date.now().toString(36) + Math.random().toString(36).substr(2);
+        };
+
+        const handleAddChemical = (newChemical) => {
+            const newChem = { ...newChemical, id: generateId(), quantity: Number(newChemical.quantity) };
+            chemicals.push(newChem);
+            logHistory(newChem, 'added');
+            saveData();
+            showMessage('เพิ่มสารเคมีเรียบร้อย!', 'success');
+            currentView = 'list';
+            renderView();
+        };
+
+        const handleUpdateChemical = (chemicalToUpdate) => {
+            const index = chemicals.findIndex(chem => chem.id === chemicalToUpdate.id);
+            if (index !== -1) {
+                chemicals[index] = { ...chemicalToUpdate, quantity: Number(chemicalToUpdate.quantity) };
+                logHistory(chemicals[index], 'edited');
+                saveData();
+                showMessage('อัปเดตสารเคมีเรียบร้อย!', 'success');
+                currentView = 'list';
+                renderView();
+            } else {
+                showMessage('ไม่พบสารเคมีที่ต้องการแก้ไข', 'error');
+            }
+        };
+
+        const handleDeleteChemical = (chemicalId) => {
+            const chemicalToDelete = chemicals.find(chem => chem.id === chemicalId);
+            if (chemicalToDelete) {
+                chemicals = chemicals.filter(chem => chem.id !== chemicalId);
+                logHistory(chemicalToDelete, 'deleted');
+                saveData();
+                showMessage('ลบสารเคมีเรียบร้อย!', 'success');
+                renderView();
+            } else {
+                showMessage('ไม่พบสารเคมีที่ต้องการลบ', 'error');
+            }
+        };
+
+        const handleRecordMovement = (chemicalId, type, quantity, requester) => {
+            const chemicalDoc = chemicals.find(chem => chem.id === chemicalId);
+            
+            if (!chemicalDoc) {
+                showMessage('ไม่พบสารเคมีที่ระบุ', 'error');
+                return;
+            }
+            
+            let newQuantity = chemicalDoc.quantity;
+            const parsedQuantity = Number(quantity);
+
+            if (type === 'in') {
+                newQuantity += parsedQuantity;
+            } else if (type === 'out') {
+                if (newQuantity < parsedQuantity) {
+                    showMessage('จำนวนสารเคมีไม่พอ!', 'error');
+                    return;
+                }
+                newQuantity -= parsedQuantity;
+            }
+            
+            chemicalDoc.quantity = newQuantity;
+            movements.push({
+                chemicalId,
+                chemicalName: chemicalDoc.name,
+                type,
+                quantity: parsedQuantity,
+                requester: requester || '',
+                timestamp: new Date().toISOString()
+            });
+            saveData();
+            showMessage('บันทึกการเคลื่อนไหวเรียบร้อย!', 'success');
+            renderView('list');
+        };
+
+        // --- Rendering Functions ---
+        const renderView = (view = currentView) => {
+            const mainContent = document.getElementById('main-content');
+            currentView = view;
+            
+            const allButtons = document.querySelectorAll('header button');
+            allButtons.forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'text-white');
+                btn.classList.add('bg-gray-200', 'text-gray-800', 'hover:bg-gray-300');
+            });
+            const currentButton = document.getElementById(`${view}-btn`);
+            if (currentButton) {
+                currentButton.classList.remove('bg-gray-200', 'text-gray-800', 'hover:bg-gray-300');
+                currentButton.classList.add('bg-blue-600', 'text-white');
+            }
+            
+            switch (view) {
+                case 'list':
+                    renderChemicalList();
+                    break;
+                case 'add':
+                case 'form':
+                    renderChemicalForm();
+                    break;
+                case 'movements':
+                    renderMovementHistory();
+                    break;
+                case 'history':
+                    renderChemicalHistory();
+                    break;
+            }
+        };
+
+        const renderChemicalList = () => {
+            const mainContent = document.getElementById('main-content');
+            const sortedChemicals = [...chemicals].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+            mainContent.innerHTML = `
+                <div class="bg-white p-8 rounded-2xl shadow-lg">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">รายการสารเคมี</h2>
+                    <div class="mb-4">
+                        <input type="text" id="search-input" placeholder="ค้นหาสารเคมี..." class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div id="chemical-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        ${sortedChemicals.length > 0 ? sortedChemicals.map((chem, index) => `
+                            <div class="bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-sm" data-id="${chem.id}">
+                                <h3 class="text-2xl font-bold text-blue-700 mb-2">${chem.name}</h3>
+                                <p class="text-gray-600">ลำดับ: <span class="font-semibold text-gray-800">${index + 1}</span></p>
+                                <p class="text-gray-600">รหัสขวด: <span class="font-semibold text-gray-800">${chem.bottleId || 'ไม่ระบุ'}</span></p>
+                                <p class="text-gray-600">CAS No.: <span class="font-semibold text-gray-800">${chem.cas || 'ไม่ระบุ'}</span></p>
+                                <p class="text-gray-600">ยี่ห้อ: <span class="font-semibold text-gray-800">${chem.brand || 'ไม่ระบุ'}</span></p>
+                                <p class="text-gray-600">ผู้ขาย: <span class="font-semibold text-gray-800">${chem.supplier || 'ไม่ระบุ'}</span></p>
+                                <p class="text-gray-600">ปริมาณ: <span class="font-semibold text-gray-800">${chem.quantity || 0} ${chem.unit || 'หน่วย'}</span></p>
+                                <p class="text-gray-600">สถานที่: <span class="font-semibold text-gray-800">${chem.location || 'ไม่ระบุ'}</span></p>
+                                <p class="text-gray-600">ความเป็นอันตราย: <span class="font-semibold text-gray-800">${chem.hazard || 'ไม่ระบุ'}</span></p>
+                                <p class="text-gray-600">ผู้เพิ่ม: <span class="font-semibold text-gray-800">${chem.adderName || 'ไม่ระบุ'}</span></p>
+                                
+                                <div class="mt-4 flex flex-wrap gap-2">
+                                    <button class="edit-btn flex-1 bg-yellow-500 text-white py-2 rounded-xl font-semibold hover:bg-yellow-600 transition-colors">
+                                        แก้ไข
+                                    </button>
+                                    <button class="delete-btn flex-1 bg-red-500 text-white py-2 rounded-xl font-semibold hover:bg-red-600 transition-colors">
+                                        ลบ
+                                    </button>
+                                </div>
+                                <div class="mt-4 flex flex-col gap-2 w-full">
+                                    <button class="movement-in-btn bg-green-500 text-white py-2 rounded-xl font-semibold hover:bg-green-600 transition-colors">รับเข้า</button>
+                                    <div class="movement-in-form hidden flex-col gap-2">
+                                        <input type="number" placeholder="จำนวนเข้า" class="movement-in-quantity p-2 border border-green-400 rounded-xl focus:outline-none" />
+                                        <button class="movement-in-submit bg-green-600 text-white py-2 px-4 rounded-xl hover:bg-green-700 transition-colors">บันทึกรับเข้า</button>
+                                        <button class="movement-in-cancel bg-gray-400 text-white py-2 px-4 rounded-xl hover:bg-gray-500 transition-colors">ยกเลิก</button>
+                                    </div>
+                                    <button class="movement-out-btn bg-red-500 text-white py-2 rounded-xl font-semibold hover:bg-red-600 transition-colors">เบิกออก</button>
+                                    <div class="movement-out-form hidden flex-col gap-2">
+                                        <input type="number" placeholder="จำนวนออก" class="movement-out-quantity p-2 border border-red-400 rounded-xl focus:outline-none" />
+                                        <input type="text" placeholder="ผู้เบิก" class="movement-out-requester p-2 border border-red-400 rounded-xl focus:outline-none" />
+                                        <button class="movement-out-submit bg-red-600 text-white py-2 px-4 rounded-xl hover:bg-red-700 transition-colors">บันทึกเบิกออก</button>
+                                        <button class="movement-out-cancel bg-gray-400 text-white py-2 px-4 rounded-xl hover:bg-gray-500 transition-colors">ยกเลิก</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('') : '<p class="text-center text-gray-500 col-span-full">ไม่พบสารเคมี</p>'}
+                    </div>
+                </div>
+            `;
+            const mainContentEl = document.getElementById('main-content');
+            if (mainContentEl) {
+                mainContentEl.querySelectorAll('.edit-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const chemicalId = e.target.closest('[data-id]').dataset.id;
+                        selectedChemical = chemicals.find(chem => chem.id === chemicalId);
+                        renderView('form');
+                    });
+                });
+
+                mainContentEl.querySelectorAll('.delete-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const chemicalId = e.target.closest('[data-id]').dataset.id;
+                        const chemicalName = chemicals.find(chem => chem.id === chemicalId)?.name || 'รายการนี้';
+                        showConfirmModal(`คุณแน่ใจหรือไม่ว่าต้องการลบ ${chemicalName} ออกจากรายการ?`, () => handleDeleteChemical(chemicalId));
+                    });
+                });
+
+                mainContentEl.querySelectorAll('.movement-in-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const parent = e.target.closest('[data-id]');
+                        parent.querySelector('.movement-in-form').classList.toggle('hidden');
+                        parent.querySelector('.movement-out-form').classList.add('hidden');
+                    });
+                });
+
+                mainContentEl.querySelectorAll('.movement-out-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const parent = e.target.closest('[data-id]');
+                        parent.querySelector('.movement-out-form').classList.toggle('hidden');
+                        parent.querySelector('.movement-in-form').classList.add('hidden');
+                    });
+                });
+
+                mainContentEl.querySelectorAll('.movement-in-submit').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const parent = e.target.closest('[data-id]');
+                        const chemicalId = parent.dataset.id;
+                        const quantity = parent.querySelector('.movement-in-quantity').value;
+                        if (quantity && Number(quantity) > 0) {
+                             handleRecordMovement(chemicalId, 'in', quantity, null);
+                        } else {
+                            showMessage('กรุณาระบุจำนวนที่ถูกต้อง', 'error');
+                        }
+                    });
+                });
+
+                mainContentEl.querySelectorAll('.movement-out-submit').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const parent = e.target.closest('[data-id]');
+                        const chemicalId = parent.dataset.id;
+                        const quantity = parent.querySelector('.movement-out-quantity').value;
+                        const requester = parent.querySelector('.movement-out-requester').value;
+                        if (quantity && Number(quantity) > 0) {
+                            handleRecordMovement(chemicalId, 'out', quantity, requester);
+                        } else {
+                            showMessage('กรุณาระบุจำนวนที่ถูกต้อง', 'error');
+                        }
+                    });
+                });
+                
+                mainContentEl.querySelectorAll('.movement-in-cancel').forEach(btn => {
+                    btn.addEventListener('click', (e) => e.target.closest('.movement-in-form').classList.add('hidden'));
+                });
+
+                mainContentEl.querySelectorAll('.movement-out-cancel').forEach(btn => {
+                    btn.addEventListener('click', (e) => e.target.closest('.movement-out-form').classList.add('hidden'));
+                });
+                
+                const searchInput = document.getElementById('search-input');
+                if (searchInput) {
+                    searchInput.addEventListener('input', (e) => {
+                        const searchTerm = e.target.value.toLowerCase();
+                        const chemicalCards = document.querySelectorAll('#chemical-grid > div');
+                        chemicalCards.forEach(card => {
+                            const chem = sortedChemicals.find(c => c.id === card.dataset.id);
+                            if (chem && (chem.name.toLowerCase().includes(searchTerm) || (chem.cas || '').toLowerCase().includes(searchTerm) || (chem.brand || '').toLowerCase().includes(searchTerm))) {
+                                card.style.display = 'block';
+                            } else {
+                                card.style.display = 'none';
+                            }
+                        });
+                    });
+                }
+            }
+        };
+
+        const renderChemicalForm = () => {
+            const mainContent = document.getElementById('main-content');
+            const isEditing = !!selectedChemical;
+            
+            const formHtml = `
+                <div class="bg-white p-8 rounded-2xl shadow-lg max-w-2xl mx-auto">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">
+                        ${isEditing ? 'แก้ไขสารเคมี' : 'เพิ่มสารเคมีใหม่'}
+                    </h2>
+                    <form id="chemical-form" class="space-y-4">
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">ชื่อผู้เพิ่มสารเคมี</label>
+                            <input type="text" id="adderName" name="adderName" value="${selectedChemical?.adderName || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">รหัสขวด</label>
+                            <input type="text" id="bottleId" name="bottleId" value="${selectedChemical?.bottleId || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">ชื่อสารเคมี</label>
+                            <input type="text" id="name" name="name" value="${selectedChemical?.name || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">หมายเลข CAS</label>
+                            <input type="text" id="cas" name="cas" value="${selectedChemical?.cas || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">ยี่ห้อ</label>
+                            <input type="text" id="brand" name="brand" value="${selectedChemical?.brand || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">ผู้ขาย</label>
+                            <input type="text" id="supplier" name="supplier" value="${selectedChemical?.supplier || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="flex-1">
+                                <label class="block text-gray-700 font-semibold mb-1">ปริมาณ</label>
+                                <input type="number" id="quantity" name="quantity" value="${selectedChemical?.quantity || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-gray-700 font-semibold mb-1">หน่วย</label>
+                                <input type="text" id="unit" name="unit" value="${selectedChemical?.unit || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">สถานที่จัดเก็บ</label>
+                            <input type="text" id="location" name="location" value="${selectedChemical?.location || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">วันที่รับเข้า</label>
+                            <input type="date" id="dateReceived" name="dateReceived" value="${selectedChemical?.dateReceived || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">วันที่เปิดใช้ (ถ้ามี)</label>
+                            <input type="date" id="dateOpened" name="dateOpened" value="${selectedChemical?.dateOpened || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">วันหมดอายุ</label>
+                            <input type="date" id="expiryDate" name="expiryDate" value="${selectedChemical?.expiryDate || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div>
+                            <label class="block text-gray-700 font-semibold mb-1">ความเป็นอันตราย (เช่น ไวไฟ, กรด)</label>
+                            <input type="text" id="hazard" name="hazard" value="${selectedChemical?.hazard || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                        <div class="flex gap-4 mt-6">
+                            <button type="submit" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold shadow-md hover:bg-blue-700 transition-colors">
+                                ${isEditing ? 'บันทึกการแก้ไข' : 'เพิ่มสารเคมี'}
+                            </button>
+                            <button type="button" id="cancel-btn" class="flex-1 bg-gray-300 text-gray-800 py-3 rounded-xl font-bold shadow-md hover:bg-gray-400 transition-colors">
+                                ยกเลิก
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            mainContent.innerHTML = formHtml;
+
+            const formEl = document.getElementById('chemical-form');
+            if (formEl) {
+                formEl.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    
+                    const formData = new FormData(e.target);
+                    const newChemical = Object.fromEntries(formData.entries());
+                    
+                    if (isEditing) {
+                        handleUpdateChemical({ ...newChemical, id: selectedChemical.id });
+                    } else {
+                        handleAddChemical(newChemical);
+                    }
+                    selectedChemical = null;
+                });
+            }
+
+            const cancelBtn = document.getElementById('cancel-btn');
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', () => {
+                    selectedChemical = null;
+                    renderView('list');
+                });
+            }
+        };
+
+        const renderMovementHistory = () => {
+            const mainContent = document.getElementById('main-content');
+            const sortedMovements = [...movements].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            const movementHtml = `
+                <div class="bg-white p-8 rounded-2xl shadow-lg">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">ประวัติการเคลื่อนไหว</h2>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full table-auto">
+                            <thead>
+                                <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+                                    <th class="py-3 px-6 text-left">สารเคมี</th>
+                                    <th class="py-3 px-6 text-left">ประเภท</th>
+                                    <th class="py-3 px-6 text-left">จำนวน</th>
+                                    <th class="py-3 px-6 text-left">ผู้เบิก</th>
+                                    <th class="py-3 px-6 text-left">วันที่/เวลา</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-gray-600 text-sm font-light">
+                                ${sortedMovements.length > 0 ? sortedMovements.map(move => `
+                                    <tr class="border-b border-gray-200 hover:bg-gray-100">
+                                        <td class="py-3 px-6 text-left whitespace-nowrap">${move.chemicalName}</td>
+                                        <td class="py-3 px-6 text-left">
+                                            <span class="py-1 px-3 rounded-full text-xs font-semibold ${move.type === 'in' ? 'bg-green-200 text-green-600' : 'bg-red-200 text-red-600'}">
+                                                ${move.type === 'in' ? 'รับเข้า' : 'เบิกออก'}
+                                            </span>
+                                        </td>
+                                        <td class="py-3 px-6 text-left">${move.quantity}</td>
+                                        <td class="py-3 px-6 text-left">${move.requester}</td>
+                                        <td class="py-3 px-6 text-left">${new Date(move.timestamp).toLocaleString('th-TH')}</td>
+                                    </tr>
+                                `).join('') : `
+                                    <tr>
+                                        <td colSpan="5" class="text-center py-4 text-gray-500">ยังไม่มีประวัติการเคลื่อนไหว</td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            mainContent.innerHTML = movementHtml;
+        };
+        
+        const renderChemicalHistory = () => {
+            const mainContent = document.getElementById('main-content');
+            const sortedHistory = [...history].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            const historyHtml = `
+                <div class="bg-white p-8 rounded-2xl shadow-lg">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">ประวัติการเปลี่ยนแปลงสารเคมี</h2>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full table-auto">
+                            <thead>
+                                <tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+                                    <th class="py-3 px-6 text-left">การกระทำ</th>
+                                    <th class="py-3 px-6 text-left">ชื่อสารเคมี</th>
+                                    <th class="py-3 px-6 text-left">ผู้ที่ทำ</th>
+                                    <th class="py-3 px-6 text-left">วันที่/เวลา</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-gray-600 text-sm font-light">
+                                ${sortedHistory.length > 0 ? sortedHistory.map(item => `
+                                    <tr class="border-b border-gray-200 hover:bg-gray-100">
+                                        <td class="py-3 px-6 text-left">
+                                            <span class="py-1 px-3 rounded-full text-xs font-semibold
+                                                ${item.action === 'added' ? 'bg-green-200 text-green-600' :
+                                                 item.action === 'edited' ? 'bg-yellow-200 text-yellow-600' :
+                                                 'bg-red-200 text-red-600'}">
+                                                ${item.action === 'added' ? 'เพิ่ม' :
+                                                 item.action === 'edited' ? 'แก้ไข' :
+                                                 'ลบ'}
+                                            </span>
+                                        </td>
+                                        <td class="py-3 px-6 text-left whitespace-nowrap">${item.chemical.name}</td>
+                                        <td class="py-3 px-6 text-left">${item.chemical.adderName || 'ไม่ระบุ'}</td>
+                                        <td class="py-3 px-6 text-left">${new Date(item.timestamp).toLocaleString('th-TH')}</td>
+                                    </tr>
+                                `).join('') : `
+                                    <tr>
+                                        <td colSpan="4" class="text-center py-4 text-gray-500">ยังไม่มีประวัติการเปลี่ยนแปลง</td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            mainContent.innerHTML = historyHtml;
+        };
+
+        const setupMainButtonListeners = () => {
+            const listBtn = document.getElementById('list-btn');
+            const addBtn = document.getElementById('add-btn');
+            const movementsBtn = document.getElementById('movements-btn');
+            const historyBtn = document.getElementById('history-btn');
+            
+            if (listBtn) listBtn.addEventListener('click', () => { selectedChemical = null; renderView('list'); });
+            if (addBtn) addBtn.addEventListener('click', () => { selectedChemical = null; renderView('add'); });
+            if (movementsBtn) movementsBtn.addEventListener('click', () => { renderView('movements'); });
+            if (historyBtn) historyBtn.addEventListener('click', () => { renderView('history'); });
+        };
+
+        // Initialize the app
+        window.onload = () => {
+            loadData();
+            setupMainButtonListeners();
+            document.getElementById('loading-message').style.display = 'none';
+            renderView();
+        };
+    </script>
+</body>
+</html>
